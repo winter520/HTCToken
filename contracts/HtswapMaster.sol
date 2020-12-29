@@ -719,6 +719,11 @@ contract HtswapMaster is Ownable {
         uint256 growthRewardPerStake;
     }
 
+    struct RewardLockStatus {
+        uint256 locked;
+        uint256 lastUnlockTime;
+    }
+
     uint256 public growthRewardCoefficient;
 
     HTCToken public rewardToken;
@@ -728,10 +733,12 @@ contract HtswapMaster is Ownable {
     uint256 public scaleDownEpoch;
     uint256 public scaleDownRate;
     uint256 public lastScaleDownBlock;
+    uint256 public rewardLockPeriod; // seconds
 
     PoolStatus[] public poolStatus;
     mapping (address => uint256) public poolIndex;
     mapping (uint256 => mapping (address => CustomerStatus)) public customerStatus;
+    mapping (uint256 => mapping (address => RewardLockStatus)) public rewardLockStatus;
     uint256 public totalWeight = 0;
     uint256 public launchBlock;
 
@@ -760,6 +767,10 @@ contract HtswapMaster is Ownable {
             updateAllPoolStatus();
         }
         rewardPerBlock = _rewardPerBlock;
+    }
+
+    function setRewardLockPeriod(uint256 _period) public onlyOwner {
+        rewardLockPeriod = _period;
     }
 
     function setScaleDown(uint256 _start, uint256 _scaleDownEpoch, uint256 _scaleDownRate) public onlyOwner {
@@ -852,15 +863,30 @@ contract HtswapMaster is Ownable {
         pool.lastRewardBlock = block.number;
     }
 
+    function _harvest(PoolStatus storage pool, CustomerStatus storage customer, RewardLockStatus storage lockStat) internal {
+            uint256 harvest = 0;
+            if (rewardLockPeriod == 0 || block.timestamp > lockStat.lastUnlockTime.add(rewardLockPeriod)) {
+                harvest = lockStat.locked;
+                lockStat.locked = 0;
+                lockStat.lastUnlockTime = block.timestamp;
+            }
+            uint256 pending = customer.amount.mul(pool.growthRewardPerStake).div(growthRewardCoefficient).sub(customer.rewardArrear);
+            if(pending > 0) {
+                uint256 locking = pending.div(2);
+                harvest = harvest.add(pending.sub(locking));
+                lockStat.locked = lockStat.locked.add(locking);
+            }
+            if (harvest > 0) {
+                safeHarvest(msg.sender, harvest);
+            }
+    }
+
     function deposit(uint256 _pid, uint256 _amount) public {
         PoolStatus storage pool = poolStatus[_pid];
         CustomerStatus storage customer = customerStatus[_pid][msg.sender];
         updatePoolStatus(_pid);
         if (customer.amount > 0) {
-            uint256 pending = customer.amount.mul(pool.growthRewardPerStake).div(growthRewardCoefficient).sub(customer.rewardArrear);
-            if(pending > 0) {
-                safeHarvest(msg.sender, pending);
-            }
+            _harvest(pool, customer, rewardLockStatus[_pid][msg.sender]);
         }
         if(_amount > 0) {
             pool.liquidity.safeTransferFrom(address(msg.sender), address(this), _amount);
@@ -875,9 +901,8 @@ contract HtswapMaster is Ownable {
         CustomerStatus storage customer = customerStatus[_pid][msg.sender];
         require(customer.amount >= _amount, "withdraw: not good");
         updatePoolStatus(_pid);
-        uint256 pending = customer.amount.mul(pool.growthRewardPerStake).div(growthRewardCoefficient).sub(customer.rewardArrear);
-        if(pending > 0) {
-            safeHarvest(msg.sender, pending);
+        if (customer.amount > 0) {
+            _harvest(pool, customer, rewardLockStatus[_pid][msg.sender]);
         }
         if(_amount > 0) {
             customer.amount = customer.amount.sub(_amount);
