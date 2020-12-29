@@ -734,6 +734,7 @@ contract HtswapMaster is Ownable {
     uint256 public scaleDownRate;
     uint256 public lastScaleDownBlock;
     uint256 public rewardLockPeriod; // seconds
+    uint256 public rewardLockPercent;
 
     PoolStatus[] public poolStatus;
     mapping (address => uint256) public poolIndex;
@@ -771,6 +772,10 @@ contract HtswapMaster is Ownable {
 
     function setRewardLockPeriod(uint256 _period) public onlyOwner {
         rewardLockPeriod = _period;
+    }
+
+    function setRewardLockPercent(uint256 _percent) public onlyOwner {
+        rewardLockPercent = _percent;
     }
 
     function setScaleDown(uint256 _start, uint256 _scaleDownEpoch, uint256 _scaleDownRate) public onlyOwner {
@@ -872,7 +877,7 @@ contract HtswapMaster is Ownable {
             }
             uint256 pending = customer.amount.mul(pool.growthRewardPerStake).div(growthRewardCoefficient).sub(customer.rewardArrear);
             if(pending > 0) {
-                uint256 locking = pending.div(2);
+                uint256 locking = pending.mul(rewardLockPercent).div(100);
                 harvest = harvest.add(pending.sub(locking));
                 lockStat.locked = lockStat.locked.add(locking);
             }
