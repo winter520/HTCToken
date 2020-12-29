@@ -870,16 +870,24 @@ contract HtswapMaster is Ownable {
 
     function _harvest(PoolStatus storage pool, CustomerStatus storage customer, RewardLockStatus storage lockStat) internal {
             uint256 harvest = 0;
-            if (rewardLockPeriod == 0 || block.timestamp > lockStat.lastUnlockTime.add(rewardLockPeriod)) {
+            if (lockStat.lastUnlockTime == 0) {
+                lockStat.lastUnlockTime = block.timestamp;
+            } else if (block.timestamp > lockStat.lastUnlockTime.add(rewardLockPeriod)) {
                 harvest = lockStat.locked;
                 lockStat.locked = 0;
                 lockStat.lastUnlockTime = block.timestamp;
             }
-            uint256 pending = customer.amount.mul(pool.growthRewardPerStake).div(growthRewardCoefficient).sub(customer.rewardArrear);
-            if(pending > 0) {
-                uint256 locking = pending.mul(rewardLockPercent).div(100);
-                harvest = harvest.add(pending.sub(locking));
-                lockStat.locked = lockStat.locked.add(locking);
+            if (customer.amount > 0) {
+                uint256 pending = customer.amount.mul(pool.growthRewardPerStake).div(growthRewardCoefficient).sub(customer.rewardArrear);
+                if(pending > 0) {
+                    if (rewardLockPeriod > 0 && rewardLockPercent > 0) {
+                        uint256 locking = pending.mul(rewardLockPercent).div(100);
+                        harvest = harvest.add(pending.sub(locking));
+                        lockStat.locked = lockStat.locked.add(locking);
+                    } else {
+                        harvest = harvest.add(pending);
+                    }
+                }
             }
             if (harvest > 0) {
                 safeHarvest(msg.sender, harvest);
@@ -890,9 +898,7 @@ contract HtswapMaster is Ownable {
         PoolStatus storage pool = poolStatus[_pid];
         CustomerStatus storage customer = customerStatus[_pid][msg.sender];
         updatePoolStatus(_pid);
-        if (customer.amount > 0) {
-            _harvest(pool, customer, rewardLockStatus[_pid][msg.sender]);
-        }
+        _harvest(pool, customer, rewardLockStatus[_pid][msg.sender]);
         if(_amount > 0) {
             pool.liquidity.safeTransferFrom(address(msg.sender), address(this), _amount);
             customer.amount = customer.amount.add(_amount);
@@ -906,9 +912,7 @@ contract HtswapMaster is Ownable {
         CustomerStatus storage customer = customerStatus[_pid][msg.sender];
         require(customer.amount >= _amount, "withdraw: not good");
         updatePoolStatus(_pid);
-        if (customer.amount > 0) {
-            _harvest(pool, customer, rewardLockStatus[_pid][msg.sender]);
-        }
+        _harvest(pool, customer, rewardLockStatus[_pid][msg.sender]);
         if(_amount > 0) {
             customer.amount = customer.amount.sub(_amount);
             pool.liquidity.safeTransfer(address(msg.sender), _amount);
