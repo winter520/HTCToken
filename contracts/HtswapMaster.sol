@@ -723,9 +723,8 @@ contract HtswapMaster is Ownable {
 
     HTCToken public rewardToken;
     uint256 public rewardPerBlock;
-    // address public tradeRewardRecipient;
-    address public devTradeRewardAddr;
-    address public commTradeRewardAddr;
+    address public devRewardAddr;
+    address public commRewardAddr;
     uint256 public scaleDownEpoch;
     uint256 public scaleDownRate;
     uint256 public lastScaleDownBlock;
@@ -750,8 +749,6 @@ contract HtswapMaster is Ownable {
         launchBlock = _launchBlock > 0 ? _launchBlock : block.number;
         rewardPerBlock = _rewardPerBlock;
         growthRewardCoefficient = _growthRewardCoefficient > 0 ? _growthRewardCoefficient : 1e12;
-        // tradeRewardRecipient = msg.sender;
-        devTradeRewardAddr = msg.sender;
     }
 
     function getPoolLength() external view returns (uint256) {
@@ -772,16 +769,11 @@ contract HtswapMaster is Ownable {
         scaleDownRate = _scaleDownRate;
     }
 
-    /*function setTradeRewardRecipient(address _tradeRewardRecipient) public onlyOwner {
-        tradeRewardRecipient = _tradeRewardRecipient;
-    }*/
-
-    function setDevTradeRewardAddr(address _devTradeRewardAddr) public onlyOwner {
-        devTradeRewardAddr = _devTradeRewardAddr;
-    }
-
-    function setCommTradeRewardAddr(address _commTradeRewardAddr) public onlyOwner {
-        commTradeRewardAddr = _commTradeRewardAddr;
+    function setDevCommRewardAddr(address _devRewardAddr, address _commRewardAddr) public onlyOwner {
+        require(_devRewardAddr != address(0), "zero dev address");
+        require(_commRewardAddr != address(0), "zero comm address");
+        devRewardAddr = _devRewardAddr;
+        commRewardAddr = _commRewardAddr;
     }
 
     function addPool(uint256 _weight, IERC20 _liquidity, bool _withUpdate) public onlyOwner {
@@ -816,8 +808,8 @@ contract HtswapMaster is Ownable {
         if (block.number > pool.lastRewardBlock && lpSupply != 0) {
             uint256 factor = block.number.sub(pool.lastRewardBlock);
             uint256 tokenReward = factor.mul(rewardPerBlock).mul(pool.weight).div(totalWeight);
-            uint256 tradeReward = tokenReward.div(5);
-            uint256 poolReward = tokenReward.sub(tradeReward);
+            uint256 devReward = tokenReward.div(10);
+            uint256 poolReward = tokenReward.sub(devReward.mul(2));
             growthRewardPerStake = growthRewardPerStake.add(poolReward.mul(growthRewardCoefficient).div(lpSupply));
         }
         return customer.amount.mul(growthRewardPerStake).div(growthRewardCoefficient).sub(customer.rewardArrear);
@@ -850,12 +842,10 @@ contract HtswapMaster is Ownable {
         uint256 factor = block.number.sub(pool.lastRewardBlock);
         uint256 tokenReward = factor.mul(rewardPerBlock).mul(pool.weight).div(totalWeight);
         if (tokenReward > 0 && lpSupply > 0) {
-            // uint256 tradeReward = tokenReward.div(5);
-            uint256 tradeReward = tokenReward.div(10);
-            uint256 poolReward = tokenReward.sub(tradeReward);
-            // rewardToken.mint(tradeRewardRecipient, tradeReward);
-            rewardToken.mint(devTradeRewardAddr, tradeReward);
-            rewardToken.mint(commTradeRewardAddr, tradeReward);
+            uint256 devReward = tokenReward.div(10);
+            uint256 poolReward = tokenReward.sub(devReward);
+            rewardToken.mint(devRewardAddr, devReward);
+            rewardToken.mint(commRewardAddr, devReward);
             rewardToken.mint(address(this), poolReward);
             pool.growthRewardPerStake = pool.growthRewardPerStake.add(poolReward.mul(growthRewardCoefficient).div(lpSupply));
         }
